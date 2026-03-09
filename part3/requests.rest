@@ -1,0 +1,14 @@
+### Get all persons
+GET http://localhost:3001/api/persons
+
+### Create a new person
+POST http://localhost:3001/api/persons
+Content-Type: application/json
+
+{
+    "name": "Naim",
+    "number": "01-234567"
+}
+
+### Delete a person
+DELETE http://localhost:3001/api/persons/69af3324ade303cfbce51b8e
