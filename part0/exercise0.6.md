@@ -1,4 +1,4 @@
-```markdown
+
 ```mermaid
 sequenceDiagram
     participant browser
