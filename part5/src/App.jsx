@@ -1,21 +1,78 @@
 import { useState, useEffect, useRef } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { BrowserRouter as Router, Routes, Route, Link, useParams } from 'react-router-dom'
+
 import blogService from './services/blogs'
 import loginService from './services/login'
+import userService from './services/users'
+
 import BlogForm from './components/BlogForm'
 import Togglable from './components/Togglable'
+import Notification from './components/Notification'
+import Users from './components/Users'
+import { useNotificationDispatch } from './contexts/NotificationContext'
+
+const UserView = ({ users }) => {
+  const id = useParams().id
+  const user = users?.find(u => u.id === id)
+  if (!user) return null
+  return (
+    <div>
+      <h2>{user.name}</h2>
+      <h3>added blogs</h3>
+      <ul>{user.blogs.map(b => <li key={b.id}>{b.title}</li>)}</ul>
+    </div>
+  )
+}
+
+const BlogView = ({ blogs, handleLike, handleComment }) => {
+  const id = useParams().id
+  const blog = blogs?.find(b => b.id === id)
+  const [comment, setComment] = useState('')
+  if (!blog) return null
+
+  const addComment = (e) => {
+    e.preventDefault()
+    handleComment(blog.id, comment)
+    setComment('')
+  }
+
+  return (
+    <div>
+      <h2>{blog.title} {blog.author}</h2>
+      <a href={blog.url}>{blog.url}</a>
+      <div>{blog.likes} likes <button onClick={() => handleLike(blog)}>like</button></div>
+      <div>added by {blog.user.name}</div>
+      <h3>comments</h3>
+      <form onSubmit={addComment}>
+        <input value={comment} onChange={(e) => setComment(e.target.value)} />
+        <button type="submit">add comment</button>
+      </form>
+      <ul>{blog.comments?.map((c, i) => <li key={i}>{c}</li>)}</ul>
+    </div>
+  )
+}
 
 const App = () => {
-  const [blogs, setBlogs] = useState([])
-  const [user, setUser] = useState(null)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [message, setMessage] = useState(null)
-  const [msgType, setMsgType] = useState('success')
+  const [user, setUser] = useState(null)
   const blogFormRef = useRef()
+  const dispatch = useNotificationDispatch()
+  const queryClient = useQueryClient()
 
-  useEffect(() => {
-    blogService.getAll().then(blogs => setBlogs(blogs))
-  }, [])
+  const blogResult = useQuery({ queryKey: ['blogs'], queryFn: blogService.getAll })
+  const userResult = useQuery({ queryKey: ['users'], queryFn: userService.getAll })
+
+  const updateBlogMutation = useMutation({
+    mutationFn: ({ id, newObject }) => blogService.update(id, newObject),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['blogs'] })
+  })
+
+  const commentMutation = useMutation({
+    mutationFn: ({ id, comment }) => blogService.addComment(id, comment),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['blogs'] })
+  })
 
   useEffect(() => {
     const loggedUserJSON = window.localStorage.getItem('loggedBlogappUser')
@@ -26,88 +83,65 @@ const App = () => {
     }
   }, [])
 
-  const handleLogin = async (event) => {
-    event.preventDefault()
+  const notify = (payload) => {
+    dispatch({ type: 'SET', payload })
+    setTimeout(() => dispatch({ type: 'CLEAR' }), 5000)
+  }
+
+  const handleLogin = async (e) => {
+    e.preventDefault()
     try {
       const user = await loginService.login({ username, password })
-      window.localStorage.setItem('loggedBlogappUser', JSON.stringify(user)) 
+      window.localStorage.setItem('loggedBlogappUser', JSON.stringify(user))
       blogService.setToken(user.token)
       setUser(user)
-      setUsername(''); setPassword('')
-    } catch (e) {
-      setMsgType('error'); setMessage('Wrong credentials')
-      setTimeout(() => setMessage(null), 5000)
-    }
+    } catch { notify('wrong credentials') }
   }
 
-const createBlog = async (blogObject) => {
-  try {
-   
-    const returnedBlog = await blogService.create(blogObject)
-    
-    
-    setBlogs(blogs.concat(returnedBlog))
-    
-    
-    if (blogFormRef.current) {
-      blogFormRef.current.toggleVisibility()
-    }
-    
-    
-    setMsgType('success')
-    setMessage(`added ${returnedBlog.title} by ${returnedBlog.author}`)
-    setTimeout(() => setMessage(null), 5000)
-    
-  } catch (exception) {
-    setMsgType('error')
-    setMessage('Failed to create blog')
-    setTimeout(() => setMessage(null), 5000)
-  }
-}
-
-  const handleLike = async (blog) => {
-    const updated = { ...blog, likes: blog.likes + 1 }
-    await blogService.update(blog.id, updated)
-    setBlogs(blogs.map(b => b.id === blog.id ? updated : b))
+  const handleLike = (blog) => {
+    updateBlogMutation.mutate({ id: blog.id, newObject: { ...blog, likes: blog.likes + 1, user: blog.user.id } })
   }
 
-  const handleDelete = async (blog) => {
-    if (window.confirm(`Remove blog ${blog.title}?`)) {
-      await blogService.remove(blog.id)
-      setBlogs(blogs.filter(b => b.id !== blog.id))
-    }
+  const handleComment = (id, comment) => {
+    commentMutation.mutate({ id, comment })
   }
 
-  if (user === null) {
-    return (
+  if (blogResult.isLoading || userResult.isLoading) return <div>loading...</div>
+
+  if (!user) return (
+    <div>
+      <h2>login</h2>
+      <Notification />
       <form onSubmit={handleLogin}>
-        <h2>Log in to application</h2>
-        {message && <div className={msgType}>{message}</div>}
-        <div>username <input value={username} onChange={({target}) => setUsername(target.value)} /></div>
-        <div>password <input type="password" value={password} onChange={({target}) => setPassword(target.value)} /></div>
+        <input value={username} onChange={(e) => setUsername(e.target.value)} />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         <button type="submit">login</button>
       </form>
-    )
-  }
+    </div>
+  )
 
   return (
-    <div>
-      <h2>blogs</h2>
-      {message && <div className={msgType}>{message}</div>}
-      <p>{user.name} logged in <button onClick={() => { window.localStorage.clear(); window.location.reload() }}>logout</button></p>
-      
-      <Togglable buttonLabel="new blog" ref={blogFormRef}>
-        <BlogForm createBlog={createBlog} />
-      </Togglable>
-
-      {blogs.sort((a, b) => b.likes - a.likes).map(blog => 
-        <div key={blog.id} style={{ border: '1px solid black', margin: 5, padding: 5 }}>
-          {blog.title} {blog.author} 
-          <button onClick={() => handleLike(blog)}>like {blog.likes}</button>
-          <button onClick={() => handleDelete(blog)}>remove</button>
-        </div>
-      )}
-    </div>
+    <Router>
+      <div style={{ background: '#eee', padding: 5 }}>
+        <Link to="/">blogs</Link> <Link to="/users">users</Link> {user.name} logged in 
+        <button onClick={() => { window.localStorage.clear(); window.location.reload() }}>logout</button>
+      </div>
+      <Notification />
+      <Routes>
+        <Route path="/users/:id" element={<UserView users={userResult.data} />} />
+        <Route path="/users" element={<Users />} />
+        <Route path="/blogs/:id" element={<BlogView blogs={blogResult.data} handleLike={handleLike} handleComment={handleComment} />} />
+        <Route path="/" element={
+          <div>
+            <h2>blog app</h2>
+            <Togglable buttonLabel="new blog" ref={blogFormRef}>
+              <BlogForm createBlog={(obj) => queryClient.setQueryData(['blogs'], blogResult.data.concat(obj))} />
+            </Togglable>
+            {blogResult.data.map(blog => <div key={blog.id}><Link to={`/blogs/${blog.id}`}>{blog.title}</Link></div>)}
+          </div>
+        } />
+      </Routes>
+    </Router>
   )
 }
 
