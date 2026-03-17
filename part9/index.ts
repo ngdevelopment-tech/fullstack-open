@@ -1,4 +1,7 @@
 import express from 'express';
+import diagnosisRouter from './src/routes/diagnoses';
+import patientRouter from './src/routes/patients';
+import cors from 'cors';
 
 interface ExerciseResult {
   periodLength: number;
@@ -42,9 +45,15 @@ const calculateExercises = (dailyHours: number[], target: number): ExerciseResul
 };
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
+app.get('/api/ping', (_req, res) => {
+  res.send('pong');
+});
 
+app.use('/api/diagnoses', diagnosisRouter);
+app.use('/api/patients', patientRouter);
 app.get('/hello', (_req, res) => {
   res.send('Hello Full Stack!');
 });
