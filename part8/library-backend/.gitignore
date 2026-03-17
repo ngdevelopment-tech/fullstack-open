@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+dist/
+build/
+
+# Environment variables (Crucial for security!)
+.env
+.env.local
+
+# IDE / OS files
+.DS_Store
+.vscode/
+*.log
